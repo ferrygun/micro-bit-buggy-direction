@@ -29,6 +29,9 @@
         },
         "cordova-plugin-geolocation": {
             "PACKAGE_NAME": "com.enterprisemobility.GPS"
+        },
+        "cordova-plugin-device-orientation": {
+            "PACKAGE_NAME": "com.enterprisemobility.GPS"
         }
     },
     "dependent_plugins": {

@@ -17,6 +17,9 @@ app.microbit = {};
 app.gattServer;
 app.device;
 
+app.Heading;
+app.EventValue = 91;
+var compassTimerId;
 
 app.microbit.EVENT_SERVICE = 'e95d93af-251d-470a-a062-fa1922dfa9a8';
 app.microbit.EVENT_CHARACTERISTIC = 'e95d9775-251d-470a-a062-fa1922dfa9a8';
@@ -47,6 +50,59 @@ app.onDeviceReady = function()
 	app.showInfo('Activate the Microbit and toggle Connect button.');
 	var progress = document.querySelector('#progress');
 	progress.hidden = true;
+
+	watchCompass();
+}
+
+
+function watchCompass() {
+    if(compassTimerId) navigator.compass.clearWatch(compassTimerId);
+    compassTimerId = navigator.compass.watchHeading(onCompassUpdate, onCompassError, {
+       	frequency: 100 // Update interval in ms
+    });
+}
+
+function onCompassUpdate(heading) {
+    //console.log(heading.magneticHeading);
+    var point; var point_destination = 'N';
+
+    switch (Math.round(heading.magneticHeading*4/360)%4) {
+        case 0: point = 'N'; break;
+        case 1: point = 'E'; break;
+        case 2: point = 'S'; break;
+        case 3: point = 'W'; break;
+    }
+
+    app.Heading = point;
+
+	console.log(app.EventValue);
+
+	var cmd;
+	document.getElementById('heading').heading = "Heading to: " + point;
+
+    if(point != 'N' && app.device != null && app.EventValue == 91) {	
+		
+    	if(point == 'W') {
+    		cmd = new Uint16Array([0x22B8, 1002]); //Right
+    	}
+
+    	if(point == 'E') {
+    		cmd = new Uint16Array([0x22B8, 1001]); //Left
+    	}
+
+    	if(point == 'S') {
+    		cmd = new Uint16Array([0x22B8, 1001]); //Left
+    	}
+		
+		app.writeCharacteristicUint16(app.device, app.microbit.CLIENTEVENT_CHARACTERISTIC, cmd);
+			       	
+
+    }
+    
+}
+
+function onCompassError(error) {
+	console.log('CompassError: ' + error.code);
 }
 
 
@@ -82,6 +138,7 @@ app.onStartButton = function()
 	app.startConnectTimer();
 	app.gattServer = null;
 	document.getElementById('info').heading = '';
+	app.EventValue = 91;
 }
 
 app.onStopButton = function()
@@ -92,7 +149,7 @@ app.onStopButton = function()
 	evothings.easyble.closeConnectedDevices();
 	app.showInfo('Status: Stopped.');
 	app.gattServer = null;
-	document.getElementById('info').heading = '';
+	document.getElementById('heading').heading = "Heading to: ";
 }
 
 app.startConnectTimer = function()
@@ -190,6 +247,7 @@ app.readServices = function(device)
 		function(errorCode)
 		{
 			console.log('Error: Failed to read services: ' + errorCode + '.');
+			app.showInfo('Error: Failed to read services');
 		});
 }
 
@@ -204,6 +262,7 @@ app.writeCharacteristic = function(device, characteristicUUID, value) {
 		function(errorCode)
 		{
 			console.log('Error: writeCharacteristic: ' + errorCode + '.');
+			app.showInfo('Error: writeCharacteristic');
 		});
 }
 
@@ -218,6 +277,8 @@ app.writeCharacteristicUint16 = function(device, characteristicUUID, value) {
 		function(errorCode)
 		{
 			console.log('Error: writeCharacteristic: ' + errorCode + '.');
+			app.showInfo('Error: writeCharacteristic');
+
 		});
 }
 
@@ -238,6 +299,7 @@ app.writeNotificationDescriptor = function(device, characteristicUUID)
 			// to use the configuration descriptor explicitly. It should be
 			// safe to ignore this error.
 			console.log('Error: writeDescriptor: ' + errorCode + '.');
+			//app.showInfo('Error: writeDescriptor');
 		});
 }
 
@@ -266,6 +328,13 @@ app.startNotifications = function(device)
 	var cmdPinAd = new Uint16Array([0x22B8, 0x00]);
 	app.writeCharacteristicUint16(device, app.microbit.CLIENTREQUIREMENTS_CHARACTERISTIC, cmdPinAd);
 
+	// Set sensor period to 160 ms.
+	//var periodDataBuffer = new ArrayBuffer(2);
+	//new DataView(periodDataBuffer).setUint16(0, 160, true);
+	//app.writeCharacteristic(device, app.microbit.ACCELEROMETER_PERIOD, periodDataBuffer);
+	//app.writeCharacteristic(device, app.microbit.MAGNETOMETER_PERIOD, periodDataBuffer);
+
+
 	// Start Event notification.
 	device.enableNotification(
 		app.microbit.EVENT_CHARACTERISTIC,
@@ -273,6 +342,7 @@ app.startNotifications = function(device)
 		function(errorCode)
 		{
 			console.log('Error: enableNotification: ' + errorCode + '.');
+			app.showInfo('Error: enableNotification');
 		});
 
 
@@ -281,6 +351,7 @@ app.startNotifications = function(device)
 
 app.readDeviceInfo = function(device)
 {
+	//app.readCharacteristicUint16(device, app.microbit.ACCELEROMETER_PERIOD, 'Acc period');
 	//app.readCharacteristicUint16(device, app.microbit.MAGNETOMETER_PERIOD, 'Mag period');
 }
 
@@ -339,6 +410,7 @@ app.readCharacteristicUint16 = function(device, uuid, name)
 	function(errorCode)
 	{
 		console.log('Error: readCharacteristic: ' + errorCode + '.');
+		app.showInfo('Error: readCharacteristic');
 	});
 }
 
@@ -355,6 +427,7 @@ app.readCharacteristic = function(device, uuid, spanID)
 	function(errorCode)
 	{
 		console.log('Error: readCharacteristic: ' + errorCode + '.');
+		app.showInfo('Error: readCharacteristic');
 	});
 }
 
@@ -367,26 +440,15 @@ app.value = function(elementId, value)
 
 app.handleEventValues = function(data)
 {
-	var Distance = 0;
 	data = new Uint8Array(data);
 	var value = evothings.util.littleEndianToUint16(data, 2);
+	app.EventValue = value;
 
-	console.log(value);
-	if (value == 88) {
-		$.ajax({
-			url: 'https://maker.ifttt.com/trigger/microbit/with/key/d24g-zqVQtV2DP8Y4mCrCb',
-			type: 'POST',
-			success: function(response) {
-				console.log(response);
-				document.getElementById('info').heading = response;
-		    },
-		    error: function(error) {
-				console.log(error);
-				document.getElementById('info').heading = error;
-		    }
-		});
+	console.log(value)
+
+	if(value == 1) {
+		console.log('head:' + app.Heading);
 	}
-	
 
 }
 
